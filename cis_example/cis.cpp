@@ -19,10 +19,10 @@ using namespace Windows::Foundation;
 // Global variables
 unsigned char* pixels;
 std::thread usb_config_thread;
-int buf_h1 = 960;
+int buf_h1 = 1288;
 int color_type = 0;
 int w1 = 1280;
-int h1 = 960;
+int h1 = 1280;
 
 // Configuration structure
 struct CISConfig {
@@ -236,7 +236,7 @@ void start_capture() {
 	}
 	else {
 		w1 = 1280;
-		h1 = 960;
+		h1 = 1280;
 	}
 
 	cis_init(w1, h1, 1);
@@ -258,7 +258,7 @@ void start_capture() {
 
 	while (1) {
 		Sleep(200);
-		if (captureImage()) {
+		if (!captureImage()) {
 			printf("Scan complete!\n");
 			break;
 		}
@@ -325,7 +325,7 @@ void initialize_scanner() {
 	usb_config_thread = std::thread(cis_usb_setup);
 
 	// Allocate memory for image data
-	pixels = (unsigned char*)malloc(1288 * 960 * 3);
+	pixels = (unsigned char*)malloc(1288 * 1280 * 3);
 
 	printf("Scanner initialized successfully.\n");
 }
