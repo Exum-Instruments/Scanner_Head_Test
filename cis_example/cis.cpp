@@ -26,15 +26,20 @@ int h1 = 1280;
 
 // Configuration structure
 struct CISConfig {
-	int color_type;  // Color mode
-	int isp;         // Image Signal Processing
-	int gamma;       // Gamma correction
-	int mode;        // Scan mode
-	int num_images;  // Number of images to capture
+	int color_type;     // Color mode
+	int isp;            // Image Signal Processing
+	int gamma;          // Gamma correction
+	int mode;           // Scan mode
+	int num_images;     // Number of images to capture
+	// Motor control parameters
+	int motor_enable;    // Enable motor (0=off, 1=on)
+	int motor_direction; // Motor direction (0=forward, 1=reverse)
+	int motor_step_freq; // Motor step frequency (Hz)
+	int motor_step_duty; // Motor step duty cycle (%)
 };
 
 // Default configuration
-CISConfig config = { 0, 0, 0, 0, 1 };
+CISConfig config = { 0, 0, 0, 0, 1, 0, 0, 0, 0 };
 
 // BMP file header structure
 #pragma pack(push, 1)
@@ -61,6 +66,45 @@ typedef struct {
 	uint32_t biClrImportant;  // Important colors
 } BMPInfoHeader;
 #pragma pack(pop)
+
+// Function prototypes
+void set_motor_control(int enable, int direction, int step_freq, int step_duty);
+void start_motor(int direction, int step_freq, int step_duty);
+void stop_motor();
+void initialize_scanner();
+void display_color_options();
+int get_int_input(int min_val, int max_val);
+
+// Set motor control parameters using appropriate registers
+void set_motor_control(int enable, int direction, int step_freq, int step_duty) {
+	printf("Setting motor parameters - Enable: %d, Direction: %d, Frequency: %d, Duty: %d\n",
+		enable, direction, step_freq, step_duty);
+
+
+	// Convert percentage to appropriate line rate
+	int line_rate = 100;
+	cis_i2c_write(I2C_ADDR, 0x108, line_rate);
+
+
+
+	// Write to motor control registers as defined in the CIS Engine documentation
+	cis_i2c_write(I2C_ADDR, 0x402, enable);       // Motor Enable
+	cis_i2c_write(I2C_ADDR, 0x403, direction);    // Motor Direction
+	cis_i2c_write(I2C_ADDR, 0x404, step_freq);    // Motor Step (Frequency)
+	cis_i2c_write(I2C_ADDR, 0x405, step_duty);    // Motor Step (Duty Cycle)
+}
+
+// Start motor with specified parameters
+void start_motor(int direction, int step_freq, int step_duty) {
+	printf("Starting motor...\n");
+	set_motor_control(1, direction, step_freq, step_duty);
+}
+
+// Stop motor
+void stop_motor() {
+	printf("Stopping motor...\n");
+	set_motor_control(0, 0, 0, 0);
+}
 
 // Function to save image as BMP file
 void save_bmp(const char* filename, unsigned char* pix, int width, int height) {
@@ -187,6 +231,12 @@ void set_gamma(int enabled) {
 	enableGamma = enabled;
 }
 
+// Set scan mode (streaming or scan)
+void setScanMode(int mode) {
+	cis_i2c_write(I2C_ADDR, 0x408, mode);
+	printf("Scan mode set to: %s\n", mode ? "Scan Mode" : "Stream Mode");
+}
+
 // Capture an image from the scanner
 bool captureImage() {
 	if (config.num_images <= 0) {
@@ -195,12 +245,12 @@ bool captureImage() {
 
 	if (checkFrameData()) {
 		if (color_type > 0 && color_type < 5) { // Save cropped raw image
-			unsigned char* pRaw = (unsigned char*)malloc(w1 * 720);
-			int i = getRawImage(pRaw, 0, 0, (short)w1, 720);
+			unsigned char* pRaw = (unsigned char*)malloc(w1 * 1280);
+			int i = getRawImage(pRaw, 0, 0, (short)w1, 1280);
 			if (i == 720) {
 				Raw2Bmp(pixels, pRaw, (short)(w1 - 8), (short)i, (short)color_type);
-				swap_rgb_to_bgr(pixels, w1 - 8, 720);
-				save_image(w1 - 8, 720);
+				swap_rgb_to_bgr(pixels, w1 - 8, 1280);
+				save_image(w1 - 8, 1280);
 				config.num_images--;
 			}
 			free(pRaw);
@@ -222,7 +272,7 @@ bool captureImage() {
 	return SOURCE_CONTINUE;
 }
 
-// Initialize and start the scanning process
+// Initialize and start the scanning process with motor control
 void start_capture() {
 	printf("\nInitializing scanner...\n");
 
@@ -250,11 +300,15 @@ void start_capture() {
 	}
 
 	setScanMode(config.mode);
+
+	// Start motor if enabled in configuration
+	if (config.motor_enable) {
+		start_motor(config.motor_direction, config.motor_step_freq, config.motor_step_duty);
+	}
+
 	cis_usb_start();
 
 	printf("Scanning in progress...\n");
-
-
 
 	while (1) {
 		Sleep(200);
@@ -264,7 +318,10 @@ void start_capture() {
 		}
 	}
 
-
+	// Stop motor after scanning is complete
+	if (config.motor_enable) {
+		stop_motor();
+	}
 }
 
 // Display color mode options
@@ -330,18 +387,7 @@ void initialize_scanner() {
 	printf("Scanner initialized successfully.\n");
 }
 
-// Clean up resources
-void cleanup_resources() {
-	printf("Cleaning up resources...\n");
-
-	free(pixels);
-	usb_config_thread.detach();
-	cis_usb_deinit();
-
-	printf("Cleanup complete.\n");
-}
-
-// Custom scan mode with user-defined settings
+// Custom scan mode with user-defined settings including motor control
 void custom_scan_mode() {
 	printf("\n=== Custom Scan Mode ===\n");
 
@@ -371,6 +417,27 @@ void custom_scan_mode() {
 	printf("Enter choice (0-1): ");
 	config.mode = get_int_input(0, 1);
 
+	// Get motor control settings
+	printf("\nEnable Motor Control?\n");
+	printf("0: Disable\n");
+	printf("1: Enable\n");
+	printf("Enter choice (0-1): ");
+	config.motor_enable = get_int_input(0, 1);
+
+	if (config.motor_enable) {
+		printf("\nMotor Direction:\n");
+		printf("0: Forward\n");
+		printf("1: Reverse\n");
+		printf("Enter choice (0-1): ");
+		config.motor_direction = get_int_input(0, 1);
+
+		printf("\nMotor Step Frequency (100-2000): ");
+		config.motor_step_freq = get_int_input(100, 2000);
+
+		printf("\nMotor Step Duty Cycle (10-90): ");
+		config.motor_step_duty = get_int_input(10, 90);
+	}
+
 	// Get number of images
 	printf("\nNumber of images to capture (1-10): ");
 	config.num_images = get_int_input(1, 10);
@@ -387,19 +454,23 @@ void custom_scan_mode() {
 	start_capture();
 }
 
-// Default scan mode with preset settings
+// Default scan mode with preset settings including motor control
 void default_scan_mode() {
 	printf("\n=== Quick Scan Mode ===\n");
 
-	// Set default settings for best color image
-	config.color_type = 5;  // RGB (Full Color)
-	config.isp = 1;         // Enable ISP for better image quality
-	config.gamma = 1;       // Enable gamma correction
-	config.mode = 0;        // Stream mode
-	config.num_images = 1;  // Capture one image
+	// Set default settings for best color image with motor enabled
+	config.color_type = 5;        // RGB (Full Color)
+	config.isp = 1;               // Enable ISP for better image quality
+	config.gamma = 1;             // Enable gamma correction
+	config.mode = 0;              // Stream mode
+	config.num_images = 1;        // Capture one image
+	config.motor_enable = 1;      // Enable motor control
+	config.motor_direction = 1;   // Forward direction
+	config.motor_step_freq = 3000; // Medium speed
+	config.motor_step_duty = 50;  // 50% duty cycle
 
 	// Apply settings
-	printf("Using optimal settings for color scanning...\n");
+	printf("Using optimal settings for color scanning with motor control...\n");
 	set_color(config.color_type);
 	set_isp(config.isp);
 	set_gamma(config.gamma);
@@ -408,6 +479,20 @@ void default_scan_mode() {
 	printf("Press any key to start scanning...");
 	_getch();
 	start_capture();
+}
+
+// Clean up resources
+void cleanup_resources() {
+	printf("Cleaning up resources...\n");
+
+	// Ensure motor is stopped
+	stop_motor();
+
+	free(pixels);
+	usb_config_thread.detach();
+	cis_usb_deinit();
+
+	printf("Cleanup complete.\n");
 }
 
 // Main function
