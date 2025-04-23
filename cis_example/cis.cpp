@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "cis_core.h"
 #include "cis_img.h"
+#include <chrono>
 #include <conio.h>
 #include <iostream>
 #include <mutex>
@@ -21,7 +22,7 @@ unsigned char* pixels;
 std::thread usb_config_thread;
 int buf_h1 = 1288;
 int color_type = 0;
-int w1 = 1280;
+int w1 = 1288;
 int h1 = 1280;
 
 // Configuration structure
@@ -81,17 +82,21 @@ void set_motor_control(int enable, int direction, int step_freq, int step_duty) 
 		enable, direction, step_freq, step_duty);
 
 
-	// Convert percentage to appropriate line rate
-	int line_rate = 100;
-	cis_i2c_write(I2C_ADDR, 0x108, line_rate);
 
-
+	std::cout << "Res set to " << cis_i2c_read(I2C_ADDR, 0x0107) << std::endl;
+	std::cout << "Trigger mode set to " << cis_i2c_read(I2C_ADDR, 0x0401) << std::endl;
+	std::cout << "Operation mode set to " << cis_i2c_read(I2C_ADDR, 0x0400) << std::endl;
 
 	// Write to motor control registers as defined in the CIS Engine documentation
 	cis_i2c_write(I2C_ADDR, 0x402, enable);       // Motor Enable
 	cis_i2c_write(I2C_ADDR, 0x403, direction);    // Motor Direction
 	cis_i2c_write(I2C_ADDR, 0x404, step_freq);    // Motor Step (Frequency)
 	cis_i2c_write(I2C_ADDR, 0x405, step_duty);    // Motor Step (Duty Cycle)
+	// Start scanning
+	printf("Motor set!              Press any key to start scanning...");
+	_getch();
+	std::cout << "DIRECTION mode set to " << cis_i2c_read(I2C_ADDR, 0x403) << std::endl;
+
 }
 
 // Start motor with specified parameters
@@ -232,45 +237,68 @@ void set_gamma(int enabled) {
 }
 
 // Set scan mode (streaming or scan)
-void setScanMode(int mode) {
-	cis_i2c_write(I2C_ADDR, 0x408, mode);
-	printf("Scan mode set to: %s\n", mode ? "Scan Mode" : "Stream Mode");
-}
+//void setScanMode(int mode) {
+//	cis_i2c_write(I2C_ADDR, 0x408, mode);
+//	printf("Scan mode set to: %s\n", mode ? "Scan Mode" : "Stream Mode");
+//}
 
 // Capture an image from the scanner
 bool captureImage() {
 	if (config.num_images <= 0) {
 		return false;
 	}
+	//unsigned char* pRaw = (unsigned char*)malloc(w1 * 1280);
 
-	if (checkFrameData()) {
-		if (color_type > 0 && color_type < 5) { // Save cropped raw image
-			unsigned char* pRaw = (unsigned char*)malloc(w1 * 1280);
-			int i = getRawImage(pRaw, 0, 0, (short)w1, 1280);
-			if (i == 720) {
-				Raw2Bmp(pixels, pRaw, (short)(w1 - 8), (short)i, (short)color_type);
-				swap_rgb_to_bgr(pixels, w1 - 8, 1280);
-				save_image(w1 - 8, 1280);
-				config.num_images--;
-			}
-			free(pRaw);
-		}
-		else { // Save full image
+	while (1) {
+		if (checkFrameData()) {
+			printf("Hi!");
 			getImage(pixels, color_type);
-			swap_rgb_to_bgr(pixels, w1 - 8, h1);
-			save_image(w1 - 8, h1);
+			swap_rgb_to_bgr(pixels, w1, h1);
+			save_image(w1, h1);
 			config.num_images--;
+			return true;
+		}
+		else {
+			printf("Waiting for frame data...\n");
+			Sleep(100);
 		}
 
-		return true;
+		if (done) {
+			return SOURCE_REMOVE;
+		}
 	}
-
-	if (done) {
-		return SOURCE_REMOVE;
-	}
-
-	return SOURCE_CONTINUE;
+	return true;
 }
+
+
+
+// Returns true if the first line's header indicates an external trigger (0xA33B)
+//  bool check_Ext_Trigger()
+//{
+//	if (checkFrameData()) {
+//	if (checkFrameData()) {
+//		// Allocate buffer for one frame (w1 lines, 1280 bytes per line)
+//		unsigned char* pRaw = (unsigned char*)malloc(w1 * 1280);
+//		if (!pRaw) {
+//			fprintf(stderr, "Memory allocation failed in check_Ext_Trigger()\n");
+//			return false;
+//		}
+//		// Attempt to get a raw image frame
+//		int lines_read = getRawImage(pRaw, 0, 0, (short)w1, 1280);
+//		if (lines_read <= 0) {
+//			fprintf(stderr, "getRawImage() failed or returned no data\n");
+//			free(pRaw);
+//			return false;
+//		}
+//
+//		if (pRaw[1] == 59) {
+//			free(pRaw);
+//			return true; // External trigger detected
+//		}
+//		free(pRaw);
+//		return false; // No external trigger
+//	}
+//}
 
 // Initialize and start the scanning process with motor control
 void start_capture() {
@@ -289,7 +317,7 @@ void start_capture() {
 		h1 = 1280;
 	}
 
-	cis_init(w1, h1, 1);
+	cis_init(1288, h1, 1);
 	if (color_type == 7) // RGBG
 	{
 		h1 = h1 >> 1;
@@ -299,30 +327,30 @@ void start_capture() {
 		h1 = h1 / 3;
 	}
 
-	setScanMode(config.mode);
-
-	// Start motor if enabled in configuration
-	if (config.motor_enable) {
-		start_motor(config.motor_direction, config.motor_step_freq, config.motor_step_duty);
-	}
-
-	cis_usb_start();
-
 	printf("Scanning in progress...\n");
 
+	/*int line_rate = 1000;
+	cis_i2c_write(I2C_ADDR, 0x108, line_rate);
+	std::cout << "Line Rate set to " << cis_i2c_read(I2C_ADDR, 0x108) << std::endl;*/
+
+	setScanMode(0);
+	int count = 0;
 	while (1) {
 		Sleep(200);
+		printf("Loop : %d\n", count);
 		if (!captureImage()) {
 			printf("Scan complete!\n");
 			break;
 		}
+		count++;
 	}
 
-	// Stop motor after scanning is complete
-	if (config.motor_enable) {
-		stop_motor();
-	}
+	//// Stop motor after scanning is complete
+	//if (config.motor_enable) {
+	//	stop_motor();
+	//}
 }
+
 
 // Display color mode options
 void display_color_options() {
@@ -453,7 +481,6 @@ void custom_scan_mode() {
 	_getch();
 	start_capture();
 }
-
 // Default scan mode with preset settings including motor control
 void default_scan_mode() {
 	printf("\n=== Quick Scan Mode ===\n");
@@ -465,7 +492,7 @@ void default_scan_mode() {
 	config.mode = 0;              // Stream mode
 	config.num_images = 1;        // Capture one image
 	config.motor_enable = 1;      // Enable motor control
-	config.motor_direction = 1;   // Forward direction
+	config.motor_direction = 0;
 	config.motor_step_freq = 3000; // Medium speed
 	config.motor_step_duty = 50;  // 50% duty cycle
 
