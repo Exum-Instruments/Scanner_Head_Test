@@ -1,4 +1,4 @@
-﻿#include "pch.h"
+#include "pch.h"
 #include "cis_core.h"
 #include "cis_img.h"
 #include <chrono>
@@ -16,11 +16,10 @@ using namespace Windows::Foundation;
 
 #define SOURCE_REMOVE 0
 #define SOURCE_CONTINUE 1
-
 // Global variables
 unsigned char* pixels;
 std::thread usb_config_thread;
-int buf_h1 = 1288;
+int buf_h1 = 1280;
 int color_type = 0;
 int w1 = 1288;
 int h1 = 1280;
@@ -33,14 +32,14 @@ struct CISConfig {
 	int mode;           // Scan mode
 	int num_images;     // Number of images to capture
 	// Motor control parameters
-	int motor_enable;    // Enable motor (0=off, 1=on)
-	int motor_direction; // Motor direction (0=forward, 1=reverse)
-	int motor_step_freq; // Motor step frequency (Hz)
-	int motor_step_duty; // Motor step duty cycle (%)
+	//int motor_enable;    // Enable motor (0=off, 1=on)
+	//int motor_direction; // Motor direction (0=forward, 1=reverse)
+	//int motor_step_freq; // Motor step frequency (Hz)
+	//int motor_step_duty; // Motor step duty cycle (%)
 };
 
 // Default configuration
-CISConfig config = { 0, 0, 0, 0, 1, 0, 0, 0, 0 };
+CISConfig config = { 0, 0, 0, 0, 1 };
 
 // BMP file header structure
 #pragma pack(push, 1)
@@ -69,47 +68,47 @@ typedef struct {
 #pragma pack(pop)
 
 // Function prototypes
-void set_motor_control(int enable, int direction, int step_freq, int step_duty);
-void start_motor(int direction, int step_freq, int step_duty);
-void stop_motor();
+//void set_motor_control(int enable, int direction, int step_freq, int step_duty);
+//void start_motor(int direction, int step_freq, int step_duty);
+//void stop_motor();
 void initialize_scanner();
 void display_color_options();
 int get_int_input(int min_val, int max_val);
 
 // Set motor control parameters using appropriate registers
-void set_motor_control(int enable, int direction, int step_freq, int step_duty) {
-	printf("Setting motor parameters - Enable: %d, Direction: %d, Frequency: %d, Duty: %d\n",
-		enable, direction, step_freq, step_duty);
-
-
-
-	std::cout << "Res set to " << cis_i2c_read(I2C_ADDR, 0x0107) << std::endl;
-	std::cout << "Trigger mode set to " << cis_i2c_read(I2C_ADDR, 0x0401) << std::endl;
-	std::cout << "Operation mode set to " << cis_i2c_read(I2C_ADDR, 0x0400) << std::endl;
-
-	// Write to motor control registers as defined in the CIS Engine documentation
-	cis_i2c_write(I2C_ADDR, 0x402, enable);       // Motor Enable
-	cis_i2c_write(I2C_ADDR, 0x403, direction);    // Motor Direction
-	cis_i2c_write(I2C_ADDR, 0x404, step_freq);    // Motor Step (Frequency)
-	cis_i2c_write(I2C_ADDR, 0x405, step_duty);    // Motor Step (Duty Cycle)
-	// Start scanning
-	printf("Motor set!              Press any key to start scanning...");
-	_getch();
-	std::cout << "DIRECTION mode set to " << cis_i2c_read(I2C_ADDR, 0x403) << std::endl;
-
-}
+//void set_motor_control(int enable, int direction, int step_freq, int step_duty) {
+//	printf("Setting motor parameters - Enable: %d, Direction: %d, Frequency: %d, Duty: %d\n",
+//		enable, direction, step_freq, step_duty);
+//
+//
+//
+//	std::cout << "Res set to " << cis_i2c_read(I2C_ADDR, 0x0107) << std::endl;
+//	std::cout << "Trigger mode set to " << cis_i2c_read(I2C_ADDR, 0x0401) << std::endl;
+//	std::cout << "Operation mode set to " << cis_i2c_read(I2C_ADDR, 0x0400) << std::endl;
+//
+//	// Write to motor control registers as defined in the CIS Engine documentation
+//	cis_i2c_write(I2C_ADDR, 0x402, enable);       // Motor Enable
+//	cis_i2c_write(I2C_ADDR, 0x403, direction);    // Motor Direction
+//	cis_i2c_write(I2C_ADDR, 0x404, step_freq);    // Motor Step (Frequency)
+//	cis_i2c_write(I2C_ADDR, 0x405, step_duty);    // Motor Step (Duty Cycle)
+//	// Start scanning
+//	printf("Motor set!              Press any key to start scanning...");
+//	_getch();
+//	std::cout << "DIRECTION mode set to " << cis_i2c_read(I2C_ADDR, 0x403) << std::endl;
+//
+//}
 
 // Start motor with specified parameters
-void start_motor(int direction, int step_freq, int step_duty) {
-	printf("Starting motor...\n");
-	set_motor_control(1, direction, step_freq, step_duty);
-}
+//void start_motor(int direction, int step_freq, int step_duty) {
+//	printf("Starting motor...\n");
+//	set_motor_control(1, direction, step_freq, step_duty);
+//}
 
 // Stop motor
-void stop_motor() {
-	printf("Stopping motor...\n");
-	set_motor_control(0, 0, 0, 0);
-}
+//void stop_motor() {
+//	printf("Stopping motor...\n");
+//	set_motor_control(0, 0, 0, 0);
+//}
 
 // Function to save image as BMP file
 void save_bmp(const char* filename, unsigned char* pix, int width, int height) {
@@ -243,29 +242,24 @@ void set_gamma(int enabled) {
 //}
 
 // Capture an image from the scanner
+
 bool captureImage() {
 	if (config.num_images <= 0) {
 		return false;
 	}
-	//unsigned char* pRaw = (unsigned char*)malloc(w1 * 1280);
-
-	while (1) {
-		if (checkFrameData()) {
-			printf("Hi!");
-			getImage(pixels, color_type);
-			swap_rgb_to_bgr(pixels, w1, h1);
-			save_image(w1, h1);
-			config.num_images--;
-			return true;
-		}
-		else {
-			printf("Waiting for frame data...\n");
-			Sleep(100);
-		}
-
-		if (done) {
-			return SOURCE_REMOVE;
-		}
+	if (checkFrameData()) {
+		getImage(pixels, color_type);
+		swap_rgb_to_bgr(pixels, w1 - 8, h1);
+		save_image(w1 - 8, h1);
+		config.num_images--;
+		return true;
+	}
+	else {
+		printf(".");
+		Sleep(100);
+	}
+	if (done) {
+		return SOURCE_REMOVE;
 	}
 	return true;
 }
@@ -296,7 +290,7 @@ bool captureImage() {
 //			return true; // External trigger detected
 //		}
 //		free(pRaw);
-//		return false; // No external trigger
+//		return false; // No external triggers
 //	}
 //}
 
@@ -316,8 +310,8 @@ void start_capture() {
 		w1 = 1280;
 		h1 = 1280;
 	}
-
 	cis_init(1288, h1, 1);
+
 	if (color_type == 7) // RGBG
 	{
 		h1 = h1 >> 1;
@@ -329,11 +323,12 @@ void start_capture() {
 
 	printf("Scanning in progress...\n");
 
-	/*int line_rate = 1000;
-	cis_i2c_write(I2C_ADDR, 0x108, line_rate);
-	std::cout << "Line Rate set to " << cis_i2c_read(I2C_ADDR, 0x108) << std::endl;*/
+	int line_rate = 0x3C5E;
+	cis_i2c_write(I2C_ADDR, 0x104, line_rate);
+	std::cout << "Line Rate set to " << cis_i2c_read(I2C_ADDR, 0x104) << std::endl;
 
-	setScanMode(0);
+	setScanMode(1);
+	cis_usb_start();
 	int count = 0;
 	while (1) {
 		Sleep(200);
@@ -445,27 +440,6 @@ void custom_scan_mode() {
 	printf("Enter choice (0-1): ");
 	config.mode = get_int_input(0, 1);
 
-	// Get motor control settings
-	printf("\nEnable Motor Control?\n");
-	printf("0: Disable\n");
-	printf("1: Enable\n");
-	printf("Enter choice (0-1): ");
-	config.motor_enable = get_int_input(0, 1);
-
-	if (config.motor_enable) {
-		printf("\nMotor Direction:\n");
-		printf("0: Forward\n");
-		printf("1: Reverse\n");
-		printf("Enter choice (0-1): ");
-		config.motor_direction = get_int_input(0, 1);
-
-		printf("\nMotor Step Frequency (100-2000): ");
-		config.motor_step_freq = get_int_input(100, 2000);
-
-		printf("\nMotor Step Duty Cycle (10-90): ");
-		config.motor_step_duty = get_int_input(10, 90);
-	}
-
 	// Get number of images
 	printf("\nNumber of images to capture (1-10): ");
 	config.num_images = get_int_input(1, 10);
@@ -486,15 +460,15 @@ void default_scan_mode() {
 	printf("\n=== Quick Scan Mode ===\n");
 
 	// Set default settings for best color image with motor enabled
-	config.color_type = 5;        // RGB (Full Color)
+	config.color_type = 7;        // RGRB (Full Color)
 	config.isp = 1;               // Enable ISP for better image quality
 	config.gamma = 1;             // Enable gamma correction
 	config.mode = 0;              // Stream mode
 	config.num_images = 1;        // Capture one image
-	config.motor_enable = 1;      // Enable motor control
-	config.motor_direction = 0;
-	config.motor_step_freq = 3000; // Medium speed
-	config.motor_step_duty = 50;  // 50% duty cycle
+	//config.motor_enable = 1;      // Enable motor control
+	//config.motor_direction = 0;
+	//config.motor_step_freq = 3000; // Medium speed
+	//config.motor_step_duty = 50;  // 50% duty cycle
 
 	// Apply settings
 	printf("Using optimal settings for color scanning with motor control...\n");
@@ -512,8 +486,7 @@ void default_scan_mode() {
 void cleanup_resources() {
 	printf("Cleaning up resources...\n");
 
-	// Ensure motor is stopped
-	stop_motor();
+
 
 	free(pixels);
 	usb_config_thread.detach();
